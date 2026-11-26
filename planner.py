@@ -1,7 +1,10 @@
 import tkinter as tk
 from tkinter import ttk
+import json
+import os
 
 DATE_FORMAT = "%m-%d-%Y"
+DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assignments.json")
 
 assignments = []
 
@@ -12,22 +15,42 @@ def validate_assignment(name, due_date, difficulty):
         "difficulty": difficulty,
     }
 
+def load_assignments(path):
+    with open(path, encoding="utf-8") as file:
+            data = json.load(file)
+            
+    loaded = []
+    for item in data:
+        assignment = validate_assignment(item["name"], item["due_date"], item["difficulty"])
+        loaded.append(assignment)
+    return loaded
+
+def save_assignments(path, items):
+    temp_path = path + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as file:
+        json.dump(items, file, indent=2)
+    os.replace(temp_path, path)
+
+def load_data():
+    return load_assignments(DATA_FILE)
+
+def save_data():
+    save_assignments(DATA_FILE, assignments)
 
 def add_assignment():
     assignment = validate_assignment(
         name_entry.get(), due_entry.get(), difficulty_entry.get()
     )
     assignments.append(assignment)
+    save_data()
     refresh_list()
     clear_form()
-
 
 def clear_form():
     name_entry.delete(0, tk.END)
     due_entry.delete(0, tk.END)
     difficulty_entry.delete(0, tk.END)
     name_entry.focus_set()
-
 
 def refresh_list():
     tree.delete(*tree.get_children())
@@ -38,7 +61,6 @@ def refresh_list():
             iid=str(index),
             values=(assignment["name"], assignment["due_date"], assignment["difficulty"])
         )
-
 
 root = tk.Tk()
 root.title("Homework Planner")
