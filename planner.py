@@ -47,6 +47,7 @@ def load_assignments(path):
 
     for item in data:
         assignment = validate_assignment(item["name"], item["due_date"], item["difficulty"])
+        assignment["completed"] = bool(item.get("completed", False))
         loaded.append(assignment)
 
     return loaded
@@ -64,7 +65,7 @@ def load_data():
         return load_assignments(DATA_FILE)
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         messagebox.showerror(
-            "Could not load assignments."
+            "Could not load assignments, starting with an empty list."
         )
         
         return []
@@ -78,10 +79,11 @@ def add_assignment():
             name_entry.get(), due_entry.get(), difficulty_entry.get()
         )
     except ValueError as error:
-        messagebox.showerror("Invalid assignment.", str(error))
+        messagebox.showerror("Invalid assignment", str(error))
 
         return
     
+    assignment["completed"] = False
     assignments.append(assignment)
     save_data()
     refresh_list()
@@ -98,18 +100,50 @@ def refresh_list():
     tree.delete(*tree.get_children())
 
     for index, assignment in enumerate(assignments):
+        status = "✓ Done" if assignment["completed"] else "To Do"
+        
         tree.insert(
             "",
             tk.END,
             iid=str(index),
-            values=(assignment["name"], assignment["due_date"], assignment["difficulty"])
+            values=(status, assignment["name"], assignment["due_date"], assignment["difficulty"]),
+            tags=("done",) if assignment["completed"] else (),
         )
+
+def toggle_complete():
+    selection = tree.selection()
+
+    if not selection:
+        messagebox.showinfo("No assignment selected", "Select an assignment in the list.")
+
+        return
+    
+    assignment = assignments[int(selection[0])]
+    assignment["completed"] = not assignment["completed"]
+    save_data()
+    refresh_list()
+
+def delete_selected():
+    selection = tree.selection()
+
+    if not selection:
+        messagebox.showinfo("No assignment selected", "Select an assignment in the list.")
+
+        return
+    
+    assignment = assignments[int(selection[0])]
+
+    if not messagebox.askyesno("Delete assignment", f"Delete \"{assignment['name']}\"?"):
+        return
+    
+    assignments.remove(assignment)
+    save_data()
+    refresh_list()
 
 def sort_key(assignment):
     due = datetime.strptime(assignment["due_date"], DATE_FORMAT)
     
     return (due, -assignment["difficulty"])
-
 
 def sort_assignments(items):
     items.sort(key=sort_key)
@@ -146,12 +180,14 @@ name_entry.bind("<Return>", lambda event: add_assignment())
 list_frame = ttk.Frame(root, padding=(12, 10))
 list_frame.pack(fill="both", expand=True)
 
-columns = ("name", "due_date", "difficulty")
+columns = ("status", "name", "due_date", "difficulty")
 tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=10)
+tree.heading("status", text="Status")
 tree.heading("name", text="Assignment")
 tree.heading("due_date", text="Due date")
 tree.heading("difficulty", text="Difficulty")
-tree.column("name", width=320)
+tree.column("status", width=80, anchor="center")
+tree.column("name", width=300)
 tree.column("due_date", width=120, anchor="center")
 tree.column("difficulty", width=90, anchor="center")
 
@@ -159,6 +195,13 @@ scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=tree.yview)
 tree.configure(yscrollcommand=scrollbar.set)
 tree.pack(side="left", fill="both", expand=True)
 scrollbar.pack(side="right", fill="y")
+
+tree.tag_configure("done", foreground="gray")
+
+actions = ttk.Frame(root, padding=(12, 0, 12, 12))
+actions.pack(fill="x")
+ttk.Button(actions, text="Toggle Complete", command=toggle_complete).pack(side="left")
+ttk.Button(actions, text="Delete", command=delete_selected).pack(side="left", padx=8)
 
 assignments = load_data()
 refresh_list()
