@@ -1,7 +1,8 @@
 import tkinter as tk
-from tkinter import ttk
 import json
 import os
+from datetime import datetime
+from tkinter import messagebox, ttk
 
 DATE_FORMAT = "%m-%d-%Y"
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assignments.json")
@@ -9,6 +10,26 @@ DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assignment
 assignments = []
 
 def validate_assignment(name, due_date, difficulty):
+    name = str(name).strip()
+
+    if not name:
+        raise ValueError("Enter an assignment name.")
+
+    due_date = str(due_date).strip()
+
+    try:
+        datetime.strptime(due_date, DATE_FORMAT)
+    except ValueError:
+        raise ValueError("Due date must be in MM-DD-YYYY format.")
+
+    try:
+        difficulty = int(str(difficulty).strip())
+    except ValueError:
+        raise ValueError("Difficulty must be a whole number from 1 to 5.")
+    
+    if not 1 <= difficulty <= 5:
+        raise ValueError("Difficulty must be a whole number from 1 to 5.")
+
     return {
         "name": name,
         "due_date": due_date,
@@ -16,31 +37,51 @@ def validate_assignment(name, due_date, difficulty):
     }
 
 def load_assignments(path):
+    if not os.path.exists(path):
+        return []
+    
     with open(path, encoding="utf-8") as file:
-            data = json.load(file)
-            
+        data = json.load(file)
+
     loaded = []
+
     for item in data:
         assignment = validate_assignment(item["name"], item["due_date"], item["difficulty"])
         loaded.append(assignment)
+
     return loaded
 
 def save_assignments(path, items):
     temp_path = path + ".tmp"
+
     with open(temp_path, "w", encoding="utf-8") as file:
         json.dump(items, file, indent=2)
+
     os.replace(temp_path, path)
 
 def load_data():
-    return load_assignments(DATA_FILE)
+    try:
+        return load_assignments(DATA_FILE)
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        messagebox.showerror(
+            "Could not load assignments."
+        )
+        
+        return []
 
 def save_data():
     save_assignments(DATA_FILE, assignments)
 
 def add_assignment():
-    assignment = validate_assignment(
-        name_entry.get(), due_entry.get(), difficulty_entry.get()
-    )
+    try:
+        assignment = validate_assignment(
+            name_entry.get(), due_entry.get(), difficulty_entry.get()
+        )
+    except ValueError as error:
+        messagebox.showerror("Invalid assignment.", str(error))
+
+        return
+    
     assignments.append(assignment)
     save_data()
     refresh_list()
@@ -53,7 +94,9 @@ def clear_form():
     name_entry.focus_set()
 
 def refresh_list():
+    sort_assignments(assignments)
     tree.delete(*tree.get_children())
+
     for index, assignment in enumerate(assignments):
         tree.insert(
             "",
@@ -61,6 +104,15 @@ def refresh_list():
             iid=str(index),
             values=(assignment["name"], assignment["due_date"], assignment["difficulty"])
         )
+
+def sort_key(assignment):
+    due = datetime.strptime(assignment["due_date"], DATE_FORMAT)
+    
+    return (due, -assignment["difficulty"])
+
+
+def sort_assignments(items):
+    items.sort(key=sort_key)
 
 root = tk.Tk()
 root.title("Homework Planner")
@@ -107,5 +159,8 @@ scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=tree.yview)
 tree.configure(yscrollcommand=scrollbar.set)
 tree.pack(side="left", fill="both", expand=True)
 scrollbar.pack(side="right", fill="y")
+
+assignments = load_data()
+refresh_list()
 
 root.mainloop()
