@@ -9,6 +9,8 @@ DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assignment
 
 assignments = []
 
+manual_order = False
+
 def validate_assignment(name, due_date, difficulty):
     name = str(name).strip()
 
@@ -38,25 +40,28 @@ def validate_assignment(name, due_date, difficulty):
 
 def load_assignments(path):
     if not os.path.exists(path):
-        return []
+        return [], False
     
     with open(path, encoding="utf-8") as file:
         data = json.load(file)
 
+    if isinstance(data, list):
+        data = {"manual_order": False, "assignments": data}
+
     loaded = []
 
-    for item in data:
+    for item in data["assignments"]:
         assignment = validate_assignment(item["name"], item["due_date"], item["difficulty"])
         assignment["completed"] = bool(item.get("completed", False))
         loaded.append(assignment)
 
-    return loaded
+    return loaded, bool(data.get("manual_order", False))
 
-def save_assignments(path, items):
+def save_assignments(path, items, manual):
     temp_path = path + ".tmp"
 
     with open(temp_path, "w", encoding="utf-8") as file:
-        json.dump(items, file, indent=2)
+        json.dump({"manual_order": manual, "assignments": items}, file, indent=2)
 
     os.replace(temp_path, path)
 
@@ -65,13 +70,14 @@ def load_data():
         return load_assignments(DATA_FILE)
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         messagebox.showerror(
-            "Could not load assignments, starting with an empty list."
+            "Could not load assignments",
+            "Starting with an empty list.",
         )
         
-        return []
+        return [], False
 
 def save_data():
-    save_assignments(DATA_FILE, assignments)
+    save_assignments(DATA_FILE, assignments, manual_order)
 
 def add_assignment():
     try:
@@ -84,7 +90,12 @@ def add_assignment():
         return
     
     assignment["completed"] = False
-    assignments.append(assignment)
+
+    if manual_order:
+        insert_by_rules(assignments, assignment)
+    else:
+        assignments.append(assignment)
+
     save_data()
     refresh_list()
     clear_form()
@@ -96,7 +107,9 @@ def clear_form():
     name_entry.focus_set()
 
 def refresh_list():
-    sort_assignments(assignments)
+    if not manual_order:
+        sort_assignments(assignments)
+
     tree.delete(*tree.get_children())
 
     for index, assignment in enumerate(assignments):
@@ -114,7 +127,7 @@ def toggle_complete():
     selection = tree.selection()
 
     if not selection:
-        messagebox.showinfo("No assignment selected", "Select an assignment in the list.")
+        messagebox.showinfo("No assignment selected", "Select an assignment.")
 
         return
     
@@ -127,7 +140,7 @@ def delete_selected():
     selection = tree.selection()
 
     if not selection:
-        messagebox.showinfo("No assignment selected", "Select an assignment in the list.")
+        messagebox.showinfo("No assignment selected", "Select an assignment.")
 
         return
     
@@ -140,6 +153,34 @@ def delete_selected():
     save_data()
     refresh_list()
 
+def move_selected(step):
+    global manual_order
+    selection = tree.selection()
+
+    if not selection:
+        messagebox.showinfo("No assignment selected", "Select an assignment.")
+
+        return
+    
+    index = int(selection[0])
+    new_index = index + step
+
+    if not 0 <= new_index < len(assignments):
+        return
+    
+    assignments[index], assignments[new_index] = assignments[new_index], assignments[index]
+    manual_order = True
+    save_data()
+    refresh_list()
+
+    tree.selection_set(str(new_index))
+
+def sort_by_rules():
+    global manual_order
+    manual_order = False
+    save_data()
+    refresh_list()
+
 def sort_key(assignment):
     due = datetime.strptime(assignment["due_date"], DATE_FORMAT)
     
@@ -147,6 +188,15 @@ def sort_key(assignment):
 
 def sort_assignments(items):
     items.sort(key=sort_key)
+
+def insert_by_rules(items, new_item):
+    position = 0
+
+    for index, item in enumerate(items):
+        if sort_key(item) <= sort_key(new_item):
+            position = index + 1
+
+    items.insert(position, new_item)
 
 root = tk.Tk()
 root.title("Homework Planner")
@@ -156,7 +206,7 @@ root.minsize(560, 380)
 title = tk.Label(root, text="Homework Planner", font=("Helvetica", 16, "bold"))
 title.pack(pady=10)
 
-form = ttk.LabelFrame(root, text="New assignment", padding=10)
+form = ttk.Frame(root, padding=10)
 form.pack(fill="x", padx=12)
 
 ttk.Label(form, text="Name").grid(row=0, column=0, sticky="w")
@@ -202,8 +252,11 @@ actions = ttk.Frame(root, padding=(12, 0, 12, 12))
 actions.pack(fill="x")
 ttk.Button(actions, text="Toggle Complete", command=toggle_complete).pack(side="left")
 ttk.Button(actions, text="Delete", command=delete_selected).pack(side="left", padx=8)
+ttk.Button(actions, text="Sort by Rules", command=sort_by_rules).pack(side="right")
+ttk.Button(actions, text="Move Down", command=lambda: move_selected(1)).pack(side="right", padx=8)
+ttk.Button(actions, text="Move Up", command=lambda: move_selected(-1)).pack(side="right")
 
-assignments = load_data()
+assignments, manual_order = load_data()
 refresh_list()
 
 root.mainloop()
